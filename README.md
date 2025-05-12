@@ -170,7 +170,7 @@ ce-translit-py/
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the [MIT License](https://github.com/chechen-language/ce-translit-py/blob/main/LICENSE).
 
 ## Contributing
 
