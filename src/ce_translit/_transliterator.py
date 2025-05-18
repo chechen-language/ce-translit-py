@@ -14,7 +14,7 @@ with resources.files("ce_translit.data").joinpath(_DATA_FILE).open(encoding="utf
     _DEFAULT_DATA: Final[dict] = json.load(fh)
 
 # Module-level constants for default configuration
-DEFAULT_MAPPING: Final[Mapping[str, str]] = _DEFAULT_DATA["cyrl_latn"]
+DEFAULT_MAPPING: Final[Mapping[str, str]] = _DEFAULT_DATA["mapping"]
 DEFAULT_BLACKLIST: Final[frozenset[str]] = frozenset(_DEFAULT_DATA["blacklist"])
 DEFAULT_UNSURELIST: Final[frozenset[str]] = frozenset(_DEFAULT_DATA["unsurelist"])
 

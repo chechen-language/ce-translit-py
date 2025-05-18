@@ -1,7 +1,13 @@
 {
-  "version": "0.1.4",
-  "title": "Dictionary for Chechen language transliteration from Cyrillic to Latin script using Chechen Latin alphabet",
-  "cyrl_latn": {
+  "meta": {
+    "version": "0.1.5",
+    "title": "Dictionary for Chechen language transliteration from Cyrillic to Latin script using Chechen Latin alphabet",
+    "source": "Chechen Latin alphabet",
+    "author": "Chechen Language",
+    "license": "MIT",
+    "url": "https://github.com/chechen-language"
+  },
+  "mapping": {
     "а": "a", "А": "A",
     "аь": "ä", "Аь": "Ä", "аЬ": "ä", "АЬ": "Ä",
     "б": "b", "Б": "B",
