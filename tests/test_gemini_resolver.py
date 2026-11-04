@@ -6,7 +6,12 @@ import pytest
 
 from ce_translit import Transliterator
 from ce_translit.ai import GeminiNasalResolver, _gemini
-from ce_translit.errors import NasalAPIError, NasalInputError, NasalResponseError
+from ce_translit.errors import (
+    NasalAPIError,
+    NasalInputError,
+    NasalLifecycleError,
+    NasalResponseError,
+)
 
 httpx = pytest.importorskip("httpx")
 errors = pytest.importorskip("google.genai.errors")
@@ -20,7 +25,7 @@ def response(payload, finish="STOP"):
 
 
 def valid_response(kwargs):
-    targets = json.loads(kwargs["contents"])["targets"]
+    targets = request_targets(kwargs)
     return response(
         {
             "decisions": [
@@ -29,6 +34,14 @@ def valid_response(kwargs):
             ]
         }
     )
+
+
+def request_targets(kwargs):
+    return [
+        target
+        for item in json.loads(kwargs["contents"])["contexts"]
+        for target in item["targets"]
+    ]
 
 
 @pytest.fixture
@@ -92,9 +105,9 @@ def test_explicit_settings_schema_and_lazy_sdk(sdk, monkeypatch):
         assert options.timeout == 60_000
         assert options.api_version == "v1beta"
         assert options.retry_options.attempts == 1
-        assert isinstance(
-            options.async_client_args["transport"], httpx.AsyncHTTPTransport
-        )
+        assert isinstance(options.httpx_client, httpx.Client)
+        assert options.httpx_client.follow_redirects is False
+        assert "transport" not in options.async_client_args
         config = sdk.calls[0]["config"]
         assert config.response_mime_type == "application/json"
         assert config.response_json_schema == _gemini._SCHEMA
@@ -183,9 +196,9 @@ def test_nonretryable_api_errors_preserve_status_only(sdk, monkeypatch, code):
 
 
 @pytest.mark.parametrize(
-    "value,expected", [("1000", 60), ("5", 5), ("-2", 0), ("garbage", 1), ("nan", 1)]
+    "value,expected", [("5", 5), ("-2", 0), ("garbage", 1), ("nan", 1)]
 )
-def test_retry_after_is_respected_and_capped(sdk, monkeypatch, value, expected):
+def test_retry_after_is_respected(sdk, monkeypatch, value, expected):
     sleeps = []
     monkeypatch.setattr(_gemini.time, "sleep", sleeps.append)
     sdk.outcomes = [
@@ -196,6 +209,22 @@ def test_retry_after_is_respected_and_capped(sdk, monkeypatch, value, expected):
     with resolver() as r:
         Transliterator(nasal_resolver=r).transliterate("сан")
     assert sleeps == [expected]
+
+
+def test_long_retry_after_fails_without_retrying_early(sdk, monkeypatch):
+    monkeypatch.setattr(
+        _gemini.time, "sleep", lambda _: pytest.fail("Unexpected sleep.")
+    )
+    sdk.outcomes = [
+        errors.ClientError(
+            429, {}, response=httpx.Response(429, headers={"Retry-After": "1000"})
+        )
+    ]
+    with resolver() as r, pytest.raises(NasalAPIError) as caught:
+        Transliterator(nasal_resolver=r).transliterate("сан")
+    assert caught.value.status_code == 429
+    assert caught.value.retry_after == 1000
+    assert len(sdk.calls) == 1
 
 
 def test_http_date_retry_after():
@@ -270,8 +299,18 @@ def test_duplicate_ids_with_matching_count_are_rejected(sdk):
 
 
 def test_sdk_decode_errors_are_response_failures_not_retries(sdk):
-    sdk.outcomes = [ValueError("private response")]
+    sdk.outcomes = [json.JSONDecodeError("Invalid JSON", "private response", 0)]
     with resolver() as r, pytest.raises(NasalResponseError):
+        Transliterator(nasal_resolver=r).transliterate("сан")
+    assert len(sdk.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "error", [TypeError("Internal bug"), ValueError("Internal bug")]
+)
+def test_internal_programming_errors_are_not_masked_as_api_errors(sdk, error):
+    sdk.outcomes = [error]
+    with resolver() as r, pytest.raises(type(error), match="Internal bug"):
         Transliterator(nasal_resolver=r).transliterate("сан")
     assert len(sdk.calls) == 1
 
@@ -281,7 +320,7 @@ def test_multiple_blocks_processed_once_and_later_failure_returns_no_result(sdk)
     with resolver() as r:
         result = Transliterator(nasal_resolver=r).transliterate_detailed(text)
         assert len(result.decisions) == 130
-    assert [len(json.loads(c["contents"])["targets"]) for c in sdk.calls] == [64, 64, 2]
+    assert [len(request_targets(c)) for c in sdk.calls] == [64, 64, 2]
     sdk.calls.clear()
     sdk.outcomes = [valid_response, response({"decisions": []})]
     with resolver() as r, pytest.raises(NasalResponseError):
@@ -303,7 +342,7 @@ def test_sync_context_closes_after_failure_and_close_is_idempotent(sdk):
         raise RuntimeError("Caller error.")
     r.close()
     assert sdk.sync_closed == 1
-    with pytest.raises(NasalAPIError):
+    with pytest.raises(NasalLifecycleError):
         r.resolve("сан", Transliterator()._targets("сан"))
 
 

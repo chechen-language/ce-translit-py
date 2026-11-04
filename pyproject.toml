@@ -20,7 +20,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-ai = ["google-genai>=2.29,<3", "httpx>=0.28.1,<1"]
+ai = ["google-genai>=2.29,<3", "httpx>=0.28.1,<1", "pydantic>=2,<3", "uniseg>=0.10.1,<0.11"]
 
 [project.urls]
 Homepage = "https://github.com/chechen-language/ce-translit-py"

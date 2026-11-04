@@ -1,5 +1,6 @@
 """Core transliteration logic for the ce_translit package."""
 
+import asyncio
 import json
 import unicodedata
 from collections.abc import Mapping
@@ -12,7 +13,12 @@ from ce_translit._models import (
     NasalTarget,
     TransliterationResult,
 )
-from ce_translit._tokenizer import _final_n_index, _iter_word_tokens, _without_marks
+from ce_translit._tokenizer import (
+    _final_n_index,
+    _iter_word_tokens,
+    _without_marks,
+    _WordToken,
+)
 from ce_translit.errors import NasalResponseError
 
 # Constants for data file
@@ -48,7 +54,7 @@ class Transliterator:
             mapping: Custom cyrillic-to-latin mapping. If None, uses default.
             nasal_resolver: Optional context resolver. No implicit AI activation.
         """
-        self._mapping = mapping if mapping is not None else DEFAULT_MAPPING
+        self._mapping = dict(mapping if mapping is not None else DEFAULT_MAPPING)
         self._nasal_resolver = nasal_resolver
 
     def _transliterate_word(
@@ -180,14 +186,14 @@ class Transliterator:
         return self.transliterate_detailed(text).text
 
     def _targets(self, text: str) -> tuple[NasalTarget, ...]:
+        return self._targets_from_tokens(tuple(_iter_word_tokens(text)))
+
+    @staticmethod
+    def _targets_from_tokens(tokens: tuple[_WordToken, ...]) -> tuple[NasalTarget, ...]:
         return tuple(
             NasalTarget(f"N{index:06d}", token.text, token.start, token.end)
             for index, token in enumerate(
-                (
-                    token
-                    for token in _iter_word_tokens(text)
-                    if _final_n_index(token.text) is not None
-                ),
+                (token for token in tokens if _final_n_index(token.text) is not None),
                 start=1,
             )
         )
@@ -197,11 +203,14 @@ class Transliterator:
         text: str,
         targets: tuple[NasalTarget, ...],
         decisions: tuple[NasalDecision, ...],
+        tokens: tuple[_WordToken, ...],
     ) -> TransliterationResult:
         by_id = {}
         expected = {target.id: target for target in targets}
         for decision in decisions:
-            if not isinstance(decision, NasalDecision):
+            if not isinstance(decision, NasalDecision) or not isinstance(
+                decision.id, str
+            ):
                 raise NasalResponseError(
                     "Resolver returned invalid occurrence decisions."
                 )
@@ -227,7 +236,7 @@ class Transliterator:
         by_start = {decision.start: decision for decision in ordered}
         parts = []
         end = 0
-        for token in _iter_word_tokens(text):
+        for token in tokens:
             parts.append(text[end : token.start])
             parts.append(
                 self._transliterate_word(token.text, by_start.get(token.start))
@@ -238,21 +247,23 @@ class Transliterator:
 
     def transliterate_detailed(self, text: str) -> TransliterationResult:
         """Return source-indexed decisions; unresolved occurrences retain n/N."""
+        tokens = tuple(_iter_word_tokens(text))
         if self._nasal_resolver is None:
-            return self._render(text, (), ())
-        targets = self._targets(text)
+            return self._render(text, (), (), tokens)
+        targets = self._targets_from_tokens(tokens)
         decisions = self._nasal_resolver.resolve(text, targets) if targets else ()
-        return self._render(text, targets, decisions)
+        return self._render(text, targets, decisions, tokens)
 
     async def atransliterate(self, text: str) -> str:
         """Asynchronously resolve nasal occurrences, without blocking network I/O."""
         return (await self.atransliterate_detailed(text)).text
 
     async def atransliterate_detailed(self, text: str) -> TransliterationResult:
+        tokens = await asyncio.to_thread(lambda: tuple(_iter_word_tokens(text)))
         if self._nasal_resolver is None:
-            return self._render(text, (), ())
-        targets = self._targets(text)
+            return await asyncio.to_thread(self._render, text, (), (), tokens)
+        targets = self._targets_from_tokens(tokens)
         decisions = (
             await self._nasal_resolver.aresolve(text, targets) if targets else ()
         )
-        return self._render(text, targets, decisions)
+        return await asyncio.to_thread(self._render, text, targets, decisions, tokens)

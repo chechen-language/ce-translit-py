@@ -169,6 +169,11 @@ def test_hyphens_delimit_words_initial_e_and_singleton_a():
     )
 
 
+def test_native_speaker_corpus_example_word_initial_e_after_hyphen():
+    assert ce_translit.transliterate("Хьаьдда-едда") == "Ẋädda-yedda"
+    assert ce_translit.transliterate("едда") == "yedda"
+
+
 def test_digits_and_mixed_scripts_do_not_create_artificial_word_boundaries():
     assert ce_translit.transliterate(
         "г1ан 1аж 1 а1 1а а2 2е aе aсан Latin еLatin сан1"

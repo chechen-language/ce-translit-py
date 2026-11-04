@@ -171,3 +171,10 @@ def test_removed_word_lists_are_not_accepted():
         Transliterator(blacklist=["сан"])
     with pytest.raises(TypeError):
         Transliterator(unsurelist=["сан"])
+
+
+def test_custom_mapping_is_a_defensive_snapshot():
+    mapping = {"с": "s", "а": "a", "н": "n"}
+    transliterator = Transliterator(mapping)
+    mapping["н"] = "changed"
+    assert transliterator.transliterate("сан") == "san"

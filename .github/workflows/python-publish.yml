@@ -37,6 +37,7 @@ jobs:
       - name: Run tests
         run: |
           hatch run test
+          hatch run ai:test
 
   release-build:
     needs: test

@@ -98,7 +98,7 @@ async def transliterate_texts(texts: list[str]) -> list[str]:
         return [await transliterator.atransliterate(text) for text in texts]
 ```
 
-For a long-running application, keep one resolver open for its lifecycle and close it during shutdown. Asynchronous use requires `async with` or `await resolver.aclose()`.
+For a long-running application, keep one resolver open for its lifecycle and close it during shutdown. Asynchronous use requires `async with` or `await resolver.aclose()`, in the same event loop that uses the resolver. Finish or cancel and await pending conversions before closing. Synchronous conversions can share a resolver across threads; a resolver used asynchronously must be closed asynchronously.
 
 ## API And Results
 
@@ -132,9 +132,13 @@ Use detailed results when your application needs to inspect uncertainty. AI pred
 
 ### Requests And Errors
 
-Long texts are sent to Gemini in sequential batches. Each batch contains at most 64 word occurrences to resolve, drawn from a source span of up to 12,000 characters. Up to 2,000 characters of surrounding text are added on each side to help interpret those words. Context can overlap between batches, but each occurrence is resolved in exactly one batch.
+Each occurrence is analysed in its complete sentence. Multiple independent sentence contexts can share one request; sentences without target occurrences are not sent. Set `context="adjacent"` on `GeminiNasalResolver` to include the previous and next sentence explicitly. An unresolved reading does not trigger hidden follow-up requests.
 
-The default timeout is 60 seconds per request attempt, configurable through `GeminiNasalResolver(timeout=...)`. Temporary network and API failures receive up to two retries.
+Sentence boundaries use Unicode UAX #29 with tailoring for single-line wraps, paragraph breaks, initials, common Russian abbreviations and web addresses. Single line breaks may remain inside a sentence; blank lines separate fragments. Unpunctuated input is treated as a fragment. Plain-text sentence boundaries can be ambiguous; the library does not infer missing punctuation.
+
+Requests are packed sequentially with configurable `max_targets_per_request=64` and `max_context_chars=12000`. The character limit applies to the sum of source contexts in one request, not JSON overhead or provider tokens. If a sentence contains more target occurrences than fit in one request, its full context is repeated with disjoint target lists. If a complete context exceeds the character limit, conversion raises `NasalInputError` before any request; increase the limit for that input. Contexts are never truncated.
+
+The default timeout is 60 seconds per request attempt, configurable through `GeminiNasalResolver(timeout=...)`. Temporary network and API failures receive up to two retries. Provider `Retry-After` delays are honoured; delays above the 60-second automatic wait limit raise `NasalAPIError` with `retry_after` instead of retrying early. HTTPX environment proxy settings apply to both sync and async calls. HTTP redirects are rejected without forwarding credentials or text to another address.
 
 Failures raise exceptions from `ce_translit.errors`:
 
@@ -142,7 +146,8 @@ Failures raise exceptions from `ce_translit.errors`:
 | --- | --- |
 | `NasalAPIError` | A network or provider request failed; `status_code` is available for API errors. |
 | `NasalResponseError` | The response was blocked, truncated or failed decision validation. |
-| `NasalInputError` | An input occurrence exceeds the context limits. |
+| `NasalInputError` | A complete context exceeds the configured limit or occurrence spans are invalid. |
+| `NasalLifecycleError` | The resolver is closed, used from a different event loop, or closed with operations still running. |
 
 These inherit from `NasalResolutionError`. A failed conversion raises an exception rather than returning partially processed text.
 
@@ -162,7 +167,7 @@ hatch run ai:test
 hatch build
 ```
 
-The test suite covers transliteration rules, Unicode boundaries, occurrence tracking, context windows and mocked Gemini requests. Live evaluations compare predictions against native-speaker-reviewed fixtures and produce a per-occurrence report.
+The offline test suite covers transliteration rules, Unicode boundaries, sentence contexts, occurrence tracking and SDK requests to local HTTP servers. It requires neither a provider key nor access to a Gemini endpoint. CI runs the core, optional AI dependencies and minimum supported SDK versions separately. Live evaluations compare `sentence` and `adjacent` modes on 93 previously native-speaker-reviewed positions, reporting every detected occurrence, per-class results, HTTP attempts, elapsed time and provider-reported token usage. Unlabelled occurrences are shown but not scored; missing usage is reported as unknown. These previously reviewed samples are not an independent estimate of linguistic accuracy.
 
 With the Gemini environment variables configured, run a live evaluation:
 

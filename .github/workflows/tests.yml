@@ -1,0 +1,35 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        environment: [core, ai, ai-min]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install test dependencies
+        run: |
+          python -m pip install pytest
+          if [ "${{ matrix.environment }}" = core ]; then
+            python -m pip install -e .
+          elif [ "${{ matrix.environment }}" = ai-min ]; then
+            python -m pip install -e '.[ai]' 'google-genai==2.29.0' 'httpx==0.28.1' 'uniseg==0.10.1'
+          else
+            python -m pip install -e '.[ai]'
+          fi
+      - name: Run offline tests
+        run: python -m pytest -q

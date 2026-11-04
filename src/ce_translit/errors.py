@@ -13,12 +13,23 @@ class NasalInputError(NasalResolutionError):
     """An input cannot be processed within the context limits."""
 
 
+class NasalLifecycleError(NasalResolutionError):
+    """A resolver is used outside its owning context or event loop."""
+
+
 class NasalAPIError(NasalResolutionError):
     """An API request failed; no partially transliterated text is returned."""
 
-    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        retry_after: float | None = None,
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
+        self.retry_after = retry_after
 
 
 class NasalResponseError(NasalResolutionError):
