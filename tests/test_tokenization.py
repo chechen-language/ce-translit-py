@@ -84,13 +84,11 @@ def test_empty_and_non_word_inputs_are_unchanged(text):
     assert ce_translit.transliterate(text) == text
 
 
-def test_combining_marks_stay_attached_and_only_word_output_is_nfc():
+def test_cyrillic_annotations_are_removed_and_other_scripts_remain_nfc():
     text = "\u0301 а\u0301 (А\u0301) e\u0301 а,\u0301\u0327"
-    assert (
-        ce_translit.transliterate(text) == "\u0301 ə\u0301 (Ə\u0301) é ə,\u0301\u0327"
-    )
-    # Decomposed input is mapped as supplied, not normalized into 'й' first.
-    assert ce_translit.transliterate("и\u0306 й") == "ĭ y"
+    assert ce_translit.transliterate(text) == "\u0301 ə (Ə) é ə,\u0301\u0327"
+    # Canonical forms of actual source letters keep their identity.
+    assert ce_translit.transliterate("и\u0306 й") == "y y"
 
 
 @pytest.mark.parametrize("mark", ["\u0301", "\u0903", "\u20dd"])
@@ -100,7 +98,7 @@ def test_all_unicode_mark_categories_stay_inside_word_tokens(mark):
     assert [(token.text, token.start, token.end) for token in tokens] == [
         (f"а{mark}", 1, 3),
     ]
-    assert ce_translit.transliterate(text) == unicodedata.normalize("NFC", f"(ə{mark})")
+    assert ce_translit.transliterate(text) == "(ə)"
 
 
 @pytest.mark.parametrize("marks", ["\u0301", "\u0903", "\u20dd", "\u0301\u0327"])
@@ -117,30 +115,30 @@ def test_all_unicode_mark_categories_stay_inside_word_tokens(mark):
         ("ШуН", "ŞuN"),
     ],
 )
-def test_final_n_rules_preserve_attached_marks(word, expected, marks):
+def test_final_n_rules_remove_source_annotations(word, expected, marks):
     assert ce_translit.transliterate(f"({word}{marks}),") == unicodedata.normalize(
-        "NFC", f"({expected}{marks}),"
+        "NFC", f"({expected}),"
     )
 
 
-def test_marks_on_any_letter_are_preserved_without_normalizing_input():
+def test_annotations_on_any_cyrillic_letter_are_removed():
     assert ce_translit.transliterate("ха\u0301н, гӏа\u0301н, шу\u0301н\u0301!") == (
-        "xán, ġán, şúń!"
+        "xan, ġan, şun!"
     )
 
 
 @pytest.mark.parametrize("marks", ["\u0301", "\u0903", "\u20dd", "\u0301\u0327"])
 @pytest.mark.parametrize(("letter", "expected"), [("а", "ə"), ("А", "Ə")])
-def test_singleton_a_uses_base_letters_and_preserves_marks(letter, expected, marks):
+def test_singleton_a_uses_base_letters_and_removes_annotations(letter, expected, marks):
     transliterator = Transliterator(mapping={"а": "o", "А": "O"})
     assert transliterator.transliterate(f"[{letter}{marks}]") == unicodedata.normalize(
-        "NFC", f"[{expected}{marks}]"
+        "NFC", f"[{expected}]"
     )
 
 
 def test_marks_do_not_hide_additional_base_letters_or_digits():
     assert ce_translit.transliterate("сан\u0301а а\u0301а а\u03011 сан\u03011") == (
-        "sańa áa á1 sań1"
+        "sana aa a1 san1"
     )
 
 
@@ -233,7 +231,7 @@ def test_mark_aware_word_rules_keep_original_token_offsets():
         ("сан\u0301", 3, 7),
         ("а\u0301", 11, 13),
     ]
-    assert ce_translit.transliterate(text) == "\t😀[sań],\r\nə\u0301"
+    assert ce_translit.transliterate(text) == "\t😀[san],\r\nə"
     assert list(_iter_word_tokens(text)) == before
     for token in before:
         assert text[token.start : token.end] == token.text

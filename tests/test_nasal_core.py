@@ -68,7 +68,7 @@ def test_case_marks_and_separators(kind, letter):
     )
     assert result.text == unicodedata.normalize(
         "NFC",
-        f"\u0301\tsa{letter.upper()}\u0301, sańa; şu{letter}\u0301-sa{letter}\u0903\u00a0san1",
+        f"\u0301\tsa{letter.upper()}, sana; şu{letter}-sa{letter}\u00a0san1",
     )
     assert len(result.decisions) == 3
 

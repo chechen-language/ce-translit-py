@@ -32,7 +32,8 @@ include = [
     "/src",
     "/tests",
     "/LICENSE",
-    "/README.md"
+    "/README.md",
+    "/docs/limitations.md"
 ]
 
 [tool.hatch.build.targets.wheel]

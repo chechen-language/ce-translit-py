@@ -7,7 +7,7 @@
 
 - Chechen-specific character combinations and positional spelling rules.
 - Contextual nasalization analysis with Gemini.
-- Preserved case, punctuation, whitespace and Unicode combining marks.
+- Preserved case, punctuation and whitespace; Cyrillic source stress marks are removed.
 - Synchronous and asynchronous APIs with per-occurrence linguistic decisions.
 
 Requires Python 3.10 or later.
@@ -169,7 +169,11 @@ Words consist of Unicode letters, decimal digits and attached combining marks. H
 
 The letter `е` becomes `ye` at the start of a word or after a separating `ъ` or `ь`: `елла → yella`, `шелъелча → şelyelça`, `шельелла → şelyella`. Signs consumed as part of mapped letters, such as `къ` and `хь`, do not act as separators.
 
-Input is mapped as supplied. Word outputs are normalized to NFC, and separators are preserved exactly. Digits remain literal unless explicitly mapped.
+After a separating `ь`, `ё` becomes `yö`: `шекьёлу → şekyölu`. In other positions, `ё` uses the ordinary `ö` mapping.
+
+Cyrillic source stress and attached annotation marks are removed during rendering: `де́ -> de`, `шекьё́лу -> şekyölu`. Positional rules still apply, so initial `е́ -> ye`. Actual Cyrillic letters, including `ё` and `й` and their decomposed forms `е + U+0308` and `и + U+0306`, retain their structural diacritics. Acute/grave marks are treated as stress, including precomposed forms such as `ѐ`. Unsupported letters remain Cyrillic rather than receiving an inferred Latin mapping. Generated Latin alphabet diacritics such as `ö`, `ü`, `ẋ`, `ġ` and `q̇` remain intact. Marks on other scripts and unattached marks are preserved. Resolver input, target words and source offsets always refer to the original text.
+
+Word outputs are normalized to NFC, and separators are preserved exactly. Digits remain literal unless explicitly mapped. Custom mappings are applied to the rendering form after annotation removal; explicit decomposed `ё`/`й` keys take priority for that input spelling, with NFC fallback otherwise. Positional `е`/`ё` glide syllables are fixed even with custom mappings; an explicit multi-character mapping such as `льё` can override the entire unit. Keys containing removed source annotations cannot match. Invisible format characters inside words are a deferred limitation; see [limitations](https://github.com/chechen-language/ce-translit-py/blob/main/docs/limitations.md).
 
 ## Development
 

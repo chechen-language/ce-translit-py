@@ -35,6 +35,37 @@ with (
 DEFAULT_MAPPING: Final[Mapping[str, str]] = _DEFAULT_DATA["mapping"]
 
 
+def _rendering_word(word: str) -> str:
+    """Remove Cyrillic stress/annotations while retaining actual source letters.
+
+    Work only on the rendering view. Structural marks that compose into a
+    Cyrillic letter remain meaningful; acute/grave accents are source stress.
+    Keep explicit decomposed ё/й available to custom sequence mappings.
+    """
+    parts = []
+    i = 0
+    while i < len(word):
+        char = word[i]
+        end = i + 1
+        while end < len(word) and unicodedata.category(word[end]).startswith("M"):
+            end += 1
+        cluster = word[i:end]
+        if unicodedata.name(char, "").startswith("CYRILLIC "):
+            unstressed = "".join(
+                item
+                for item in unicodedata.normalize("NFD", cluster)
+                if item not in ("\u0300", "\u0301")
+            )
+            letter = _without_marks(unicodedata.normalize("NFC", unstressed))
+            if char in "еЕиИ" and letter in "ёЁйЙ":
+                letter = unicodedata.normalize("NFD", letter)
+            parts.append(letter)
+        else:
+            parts.append(cluster)
+        i = end
+    return "".join(parts)
+
+
 class Transliterator:
     """Transliterate Chechen text from Cyrillic to Latin script using the Chechen Latin alphabet.
 
@@ -68,6 +99,7 @@ class Transliterator:
         Returns:
             The word transliterated to Latin script.
         """
+        word = _rendering_word(word)
         base_word = _without_marks(word)
         if base_word in ("а", "А"):
             replacement = "ə" if base_word == "а" else "Ə"
@@ -100,13 +132,15 @@ class Transliterator:
                 word[i : i + 1],
             ]:
                 match_length = len(key)
+                canonical_key = unicodedata.normalize("NFC", key)
+                lower_key = canonical_key.lower()
                 # A custom multi-character map cannot consume the AI-controlled n.
                 if final_letter is not None and i + match_length > final_letter:
                     continue
                 # Handle 'ъ' and 'Ъ' before 'е', 'ё', 'ю', 'я' and their uppercase versions
                 # The lower() method is used to ensure the comparison is case-insensitive.
                 if (
-                    key.lower() == "ъ"
+                    lower_key == "ъ"
                     and has_next_letter
                     and next_letter.lower() in "еёюя"
                 ):
@@ -114,19 +148,24 @@ class Transliterator:
                         match = "q̇" if key.islower() else "Q̇"  # match to 'къ'
                     else:
                         match = ""  # else skip 'ъ'
-                elif key.lower() == "е":
+                elif lower_key in ("е", "ё") and not (
+                    key != canonical_key and key in self._mapping
+                ):
                     # A soft sign inside a mapped letter (e.g. хь) is not a separator.
-                    if (
-                        i == 0
-                        or previous_unit.lower() == "ь"
-                        or (
-                            has_pre_letter
-                            and pre_letter.lower() == "ъ"
-                            and (i < 2 or word[i - 2 : i].lower() != "къ")
+                    if previous_unit.lower() == "ь" or (
+                        lower_key == "е"
+                        and (
+                            i == 0
+                            or (
+                                has_pre_letter
+                                and pre_letter.lower() == "ъ"
+                                and (i < 2 or word[i - 2 : i].lower() != "къ")
+                            )
                         )
                     ):
+                        syllable = "ye" if lower_key == "е" else "yö"
                         if key.islower():
-                            match = "ye"
+                            match = syllable
                         else:
                             following = i + 1
                             while following < len(word) and unicodedata.category(
@@ -136,19 +175,19 @@ class Transliterator:
                             next_base = word[following : following + 1]
                             previous_base = _without_marks(previous_unit)[-1:]
                             match = (
-                                "YE"
+                                syllable.upper()
                                 if next_base.isupper()
                                 or not next_base
                                 and previous_base.isupper()
-                                else "Ye"
+                                else syllable.capitalize()
                             )
                     else:
                         match = self._mapping.get(
-                            key
-                        )  # regular transliteration for 'е'
+                            key, self._mapping.get(canonical_key)
+                        )  # regular transliteration for 'е' or 'ё'
                 else:
                     match = self._mapping.get(
-                        key
+                        key, self._mapping.get(canonical_key)
                     )  # regular transliteration for other characters
 
                 if match is not None:
