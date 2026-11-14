@@ -152,9 +152,44 @@ def test_native_wire_payload_and_owned_clients_close(http_stub, mode):
     assert request["body"]["generationConfig"]["responseMimeType"] == "application/json"
     assert request["body"]["generationConfig"]["candidateCount"] == 1
     assert "systemInstruction" in request["body"]
+    assert "thinkingConfig" not in request["body"]["generationConfig"]
     assert resolver._closed
     http = resolver._http if mode == "sync" else resolver._ahttp
     assert http.is_closed
+
+
+@pytest.mark.parametrize("mode", ["sync", "async"])
+@pytest.mark.parametrize("level", ["minimal", "low", "medium", "high", "xhigh"])
+def test_reasoning_level_reaches_native_gemini_wire_config(http_stub, mode, level):
+    server = http_stub()
+    resolver = GeminiNasalResolver(
+        "dummy", "chosen-model", server.url, thinking_level=level
+    )
+    assert convert(resolver, mode).text == "saŋ"
+    generation = server.requests[0]["body"]["generationConfig"]
+    thinking = generation["thinkingConfig"]
+    assert set(thinking) in ({"thinkingLevel"}, {"thinking_level"})
+    assert next(iter(thinking.values())) == level.upper()
+    assert generation["responseMimeType"] == "application/json"
+    assert generation["candidateCount"] == 1
+    assert "responseJsonSchema" in generation
+
+
+@pytest.mark.parametrize("mode", ["sync", "async"])
+def test_custom_gateway_uses_explicit_sdk_placeholder_not_environment_credentials(
+    http_stub, monkeypatch, mode
+):
+    server = http_stub()
+    monkeypatch.setenv("GOOGLE_API_KEY", "must-not-leak")
+    monkeypatch.setenv("GEMINI_API_KEY", "must-not-leak-either")
+    resolver = GeminiNasalResolver(
+        "local-gateway", "gateway-model", server.url, thinking_level="LOW"
+    )
+    assert convert(resolver, mode).text == "saŋ"
+    request = server.requests[0]
+    assert request["headers"]["x-goog-api-key"] == "local-gateway"
+    assert request["path"] == "/v1beta/models/gateway-model:generateContent"
+    assert "must-not-leak" not in json.dumps(request)
 
 
 @pytest.mark.parametrize("mode", ["sync", "async"])

@@ -9,6 +9,15 @@ GOLD = json.loads(
 )
 
 
+def test_native_speaker_corrected_p07_khyan_is_nasalized():
+    passage = next(p for p in GOLD["texts"] if p["id"] == "P07")
+    target = next(t for t in passage["targets"] if t["id"] == "P07-T005")
+    sentence = "Хьоьга хьан белхор бу шен беза бала?"
+    assert target["start"] == passage["text"].index(sentence) + len("Хьоьга ")
+    assert passage["text"][target["start"] : target["end"]] == "хьан"
+    assert target["kind"] == "nasalization"
+
+
 def test_all_63_human_reviewed_occurrences_are_detected_and_applied():
     count = 0
     for passage in GOLD["texts"]:

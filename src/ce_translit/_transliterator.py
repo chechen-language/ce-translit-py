@@ -76,6 +76,7 @@ class Transliterator:
         final_letter = _final_n_index(word) if decision is not None else None
         result = ""
         i = 0
+        previous_unit = ""
 
         while i < len(word):
             match = None
@@ -114,42 +115,33 @@ class Transliterator:
                     else:
                         match = ""  # else skip 'ъ'
                 elif key.lower() == "е":
-                    # 'е' can be 'ye' or 'e' depending on context
-                    if i == 0:  # if 'е' is at the start of the word
-                        # match to 'ye' if the next letter is uppercase or if there is no next letter but previous letter is uppercase
-                        match = (
-                            "ye"
-                            if key.islower()
-                            else (
-                                "YE"
-                                if has_next_letter
-                                and next_letter.isupper()
-                                or not has_next_letter
-                                and has_pre_letter
-                                and pre_letter.isupper()
-                                else "Ye"
-                            )
+                    # A soft sign inside a mapped letter (e.g. хь) is not a separator.
+                    if (
+                        i == 0
+                        or previous_unit.lower() == "ь"
+                        or (
+                            has_pre_letter
+                            and pre_letter.lower() == "ъ"
+                            and (i < 2 or word[i - 2 : i].lower() != "къ")
                         )
-                    elif (
-                        has_pre_letter
-                        and pre_letter.lower() == "ъ"
-                        and (i < 2 or word[i - 2 : i].lower() != "къ")
                     ):
-                        # after 'ъ' but not after 'къ'
-                        # match to 'ye' if the next letter is uppercase or if there is no next letter but previous letter is uppercase
-                        match = (
-                            "ye"
-                            if key.islower()
-                            else (
+                        if key.islower():
+                            match = "ye"
+                        else:
+                            following = i + 1
+                            while following < len(word) and unicodedata.category(
+                                word[following]
+                            ).startswith("M"):
+                                following += 1
+                            next_base = word[following : following + 1]
+                            previous_base = _without_marks(previous_unit)[-1:]
+                            match = (
                                 "YE"
-                                if has_next_letter
-                                and next_letter.isupper()
-                                or not has_next_letter
-                                and has_pre_letter
-                                and pre_letter.isupper()
+                                if next_base.isupper()
+                                or not next_base
+                                and previous_base.isupper()
                                 else "Ye"
                             )
-                        )
                     else:
                         match = self._mapping.get(
                             key
@@ -161,10 +153,16 @@ class Transliterator:
 
                 if match is not None:
                     result += match
+                    if not unicodedata.category(key[0]).startswith(
+                        "M"
+                    ) or _without_marks(key):
+                        previous_unit = key
                     i += match_length
                     break
 
             if match is None:
+                if not unicodedata.category(word[i]).startswith("M"):
+                    previous_unit = word[i]
                 result += word[i]
                 i += 1
 

@@ -3,6 +3,16 @@
   "source": "ce-corpus-toolkit/exports/nasal-review-2026-10-09",
   "source_sha256": "6a60ba79cf6cfdca4f6e18b53c50c839ede67a68c94b02ac742062db340cebf6",
   "review": "Native speaker approved all 63 improved predictions; this is not a general accuracy claim.",
+  "corrections": [
+    {
+      "review_date": "2026-11-14",
+      "target_id": "P07-T005",
+      "previous_kind": "consonant",
+      "kind": "nasalization",
+      "source": "Explicit native-speaker correction in the project discussion.",
+      "scope": "The occurrence of хьан in Хьоьга хьан белхор бу шен беза бала? only."
+    }
+  ],
   "texts": [
     {
       "id": "P01",
@@ -427,7 +437,7 @@
           "word": "хьан",
           "start": 311,
           "end": 315,
-          "kind": "consonant"
+          "kind": "nasalization"
         },
         {
           "id": "P07-T006",

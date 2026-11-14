@@ -123,10 +123,19 @@ def test_proxy_base_url_and_timeout_are_forwarded(sdk):
     assert options.timeout == 12_500
 
 
+def test_thinking_level_uses_native_sdk_config_without_extra_body(sdk):
+    with resolver(thinking_level=" high ") as r:
+        Transliterator(nasal_resolver=r).transliterate("сан")
+    config = sdk.calls[0]["config"]
+    assert config.thinking_config.thinking_level == "HIGH"
+    assert config.http_options is None
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [
         {"api_key": ""},
+        {"api_key": None},
         {"model": " "},
         {"timeout": 0},
         {"timeout": float("nan")},
@@ -137,6 +146,10 @@ def test_proxy_base_url_and_timeout_are_forwarded(sdk):
         {"base_url": "http://example.test/v1"},
         {"base_url": "http://example.test/v1beta/"},
         {"base_url": "http://example.test?secret=key"},
+        {"thinking_level": ""},
+        {"thinking_level": "automatic"},
+        {"thinking_level": 100},
+        {"thinking_level": True},
     ],
 )
 def test_invalid_settings_fail_before_client_construction(sdk, kwargs):

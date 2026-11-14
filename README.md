@@ -54,11 +54,16 @@ The examples read these environment variables:
 
 | Variable | Purpose |
 | --- | --- |
-| `GEMINI_API_KEY` | API key for the configured service. |
+| `GEMINI_API_KEY` | API key for the configured service, or a non-empty placeholder for an unauthenticated gateway. |
 | `GEMINI_MODEL` | Model name available on that service. |
 | `GEMINI_BASE_URL` | Optional service root for a Gemini-compatible endpoint. |
+| `GEMINI_THINKING_LEVEL` | Reasoning level for the examples, defaulting to `low`: `minimal`, `low`, `medium`, `high`, or `xhigh`. |
 
 With `GEMINI_BASE_URL` unset, the resolver connects to Google's Gemini API. Set it to your service root to use a Gemini-compatible gateway such as CLIProxyAPI. The endpoint must support Gemini's `generateContent` protocol under `/v1beta`.
+
+The same client works with both services: change only `base_url`, `model` and `api_key`. The resolver requires a non-empty key; for a gateway without client authentication, set `GEMINI_API_KEY` to a placeholder such as `local-gateway`. Google's Gemini API requires a valid key. Set `thinking_level` independently of the model name. Supported levels depend on the selected model and service.
+
+The examples use adjacent-sentence context and `low` reasoning, with an environment override for the reasoning level. The resolver's constructor defaults remain `context="sentence"` and `thinking_level=None`; omitting the reasoning argument or passing `None` uses the provider's default.
 
 ### Usage
 
@@ -71,7 +76,9 @@ from ce_translit.ai import GeminiNasalResolver
 with GeminiNasalResolver(
     api_key=os.environ["GEMINI_API_KEY"],
     model=os.environ["GEMINI_MODEL"],
-    base_url=os.environ.get("GEMINI_BASE_URL"),
+    base_url=os.environ.get("GEMINI_BASE_URL") or None,
+    context="adjacent",
+    thinking_level=os.environ.get("GEMINI_THINKING_LEVEL") or "low",
 ) as resolver:
     transliterator = Transliterator(nasal_resolver=resolver)
     result = transliterator.transliterate_detailed("цхьа стаг бен вацар арахь")
@@ -88,11 +95,14 @@ import os
 from ce_translit import Transliterator
 from ce_translit.ai import GeminiNasalResolver
 
+
 async def transliterate_texts(texts: list[str]) -> list[str]:
     async with GeminiNasalResolver(
         api_key=os.environ["GEMINI_API_KEY"],
         model=os.environ["GEMINI_MODEL"],
-        base_url=os.environ.get("GEMINI_BASE_URL"),
+        base_url=os.environ.get("GEMINI_BASE_URL") or None,
+        context="adjacent",
+        thinking_level=os.environ.get("GEMINI_THINKING_LEVEL") or "low",
     ) as resolver:
         transliterator = Transliterator(nasal_resolver=resolver)
         return [await transliterator.atransliterate(text) for text in texts]
@@ -109,7 +119,7 @@ For a long-running application, keep one resolver open for its lifecycle and clo
 | `await atransliterate(text)` | Latin text as `str`. |
 | `await atransliterate_detailed(text)` | `TransliterationResult` with text and decisions. |
 
-The module-level functions with these names provide basic transliteration. Use a `Transliterator` instance with a resolver for contextual nasalization. For a custom alphabet, pass a character mapping to `Transliterator(mapping=...)`; it replaces the default mapping.
+The module-level functions with these names provide basic transliteration. Use a `Transliterator` instance with a resolver for contextual nasalization. For a custom alphabet, pass a character mapping to `Transliterator(mapping=...)`; it replaces the default mapping and determines the multi-character units recognized by positional rules.
 
 ### Detailed Results
 
@@ -157,6 +167,8 @@ AI processing sends source context to the configured provider and consumes its A
 
 Words consist of Unicode letters, decimal digits and attached combining marks. Hyphens, quotes, brackets and underscores delimit words; contiguous mixed-script text forms one word. Whitespace, punctuation and emoji retain their original positions among the transformed words.
 
+The letter `е` becomes `ye` at the start of a word or after a separating `ъ` or `ь`: `елла → yella`, `шелъелча → şelyelça`, `шельелла → şelyella`. Signs consumed as part of mapped letters, such as `къ` and `хь`, do not act as separators.
+
 Input is mapped as supplied. Word outputs are normalized to NFC, and separators are preserved exactly. Digits remain literal unless explicitly mapped.
 
 ## Development
@@ -175,6 +187,7 @@ With the Gemini environment variables configured, run a live evaluation:
 CE_TRANSLIT_API_KEY="$GEMINI_API_KEY" \
 CE_TRANSLIT_MODEL="$GEMINI_MODEL" \
 CE_TRANSLIT_BASE_URL="${GEMINI_BASE_URL:-}" \
+CE_TRANSLIT_THINKING_LEVEL="${GEMINI_THINKING_LEVEL:-low}" \
 hatch run ai:test tests/test_live_gemini.py --run-live-nasal \
   --nasal-report "/tmp/nasal-review-$(date +%s).md" -v
 ```

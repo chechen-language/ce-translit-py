@@ -59,6 +59,7 @@ def live_transliterator(context_mode):
                         "context_chars": sum(len(item.text) for item in batch.contexts),
                         "prompt_tokens": getattr(usage, "prompt_token_count", None),
                         "output_tokens": getattr(usage, "candidates_token_count", None),
+                        "thinking_tokens": getattr(usage, "thoughts_token_count", None),
                         "total_tokens": getattr(usage, "total_token_count", None),
                     }
                 )
@@ -66,8 +67,9 @@ def live_transliterator(context_mode):
     with ObservedResolver(
         api_key=os.environ["CE_TRANSLIT_API_KEY"],
         model=os.environ["CE_TRANSLIT_MODEL"],
-        base_url=os.environ.get("CE_TRANSLIT_BASE_URL"),
+        base_url=os.environ.get("CE_TRANSLIT_BASE_URL") or None,
         context=context_mode,
+        thinking_level=os.environ.get("CE_TRANSLIT_THINKING_LEVEL") or None,
     ) as resolver:
         yield Transliterator(nasal_resolver=resolver), resolver
 

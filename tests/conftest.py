@@ -99,6 +99,7 @@ def pytest_sessionfinish(session, exitstatus):
         "# Native Gemini Nasal Evaluation",
         "",
         f"Configured model: `{os.environ.get('CE_TRANSLIT_MODEL')}`. This is not proof of backend model identity.",
+        f"Configured thinking level: `{os.environ.get('CE_TRANSLIT_THINKING_LEVEL') or 'provider default'}`.",
         f"Scored: **{correct}/{len(scored)}**. Reference data: 93 previously reviewed positions, evaluated in two context modes.",
         "This small, previously reviewed sample is not a general accuracy estimate.",
         "All detected occurrences are shown; unlabelled positions are not scored. Missing provider usage is reported as unknown, not zero.",

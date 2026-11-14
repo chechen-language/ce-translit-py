@@ -35,6 +35,9 @@ class _RequestArgs(TypedDict):
     config: "types.GenerateContentConfig"
 
 
+_THINKING_LEVELS = frozenset({"minimal", "low", "medium", "high", "xhigh"})
+
+
 def _reject_redirect(response: "httpx.Response") -> None:
     if 300 <= response.status_code < 400:
         raise NasalAPIError(
@@ -193,11 +196,21 @@ class GeminiNasalResolver:
         context: ContextMode = "sentence",
         max_targets_per_request: int = 64,
         max_context_chars: int = 12_000,
+        thinking_level: str | None = None,
     ) -> None:
         if not isinstance(api_key, str) or not api_key.strip():
             raise ValueError("api_key must be explicitly provided.")
         if not isinstance(model, str) or not model.strip():
             raise ValueError("model must be explicitly provided.")
+        if thinking_level is not None:
+            if (
+                not isinstance(thinking_level, str)
+                or thinking_level.strip().lower() not in _THINKING_LEVELS
+            ):
+                raise ValueError(
+                    "thinking_level must be minimal, low, medium, high, xhigh, or None."
+                )
+            thinking_level = thinking_level.strip().upper()
         if context not in ("sentence", "adjacent"):
             raise ValueError("context must be 'sentence' or 'adjacent'.")
         for limit in (max_targets_per_request, max_context_chars):
@@ -228,6 +241,7 @@ class GeminiNasalResolver:
             _load_sdk()
         )
         self._api_key = api_key.strip()
+        self._thinking_level = thinking_level
         self._model = model.strip()
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
@@ -320,7 +334,9 @@ class GeminiNasalResolver:
                 async_client_args={"follow_redirects": False},
             )
             client = self._genai.Client(
-                api_key=self._api_key, enterprise=False, http_options=options
+                api_key=self._api_key,
+                enterprise=False,
+                http_options=options,
             )
             if asynchronous:
                 self._aclient = client
@@ -356,6 +372,11 @@ class GeminiNasalResolver:
                 response_mime_type="application/json",
                 response_json_schema=_SCHEMA,
                 candidate_count=1,
+                thinking_config=(
+                    self._types.ThinkingConfig(thinking_level=self._thinking_level)
+                    if self._thinking_level is not None
+                    else None
+                ),
                 automatic_function_calling=self._types.AutomaticFunctionCallingConfig(
                     disable=True
                 ),
