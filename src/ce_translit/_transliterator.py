@@ -258,8 +258,13 @@ class Transliterator:
                 or (decision.word, decision.start, decision.end)
                 != (target.word, target.start, target.end)
                 or decision.kind not in ("consonant", "nasalization", "undetermined")
-                or not isinstance(decision.reason, str)
-                or not decision.reason.strip()
+                or (
+                    decision.reason is not None
+                    and (
+                        not isinstance(decision.reason, str)
+                        or not decision.reason.strip()
+                    )
+                )
             ):
                 raise NasalResponseError(
                     "Resolver returned invalid occurrence decisions."

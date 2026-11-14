@@ -178,3 +178,30 @@ def test_custom_mapping_is_a_defensive_snapshot():
     transliterator = Transliterator(mapping)
     mapping["н"] = "changed"
     assert transliterator.transliterate("сан") == "san"
+
+
+def test_custom_resolver_can_honestly_omit_reasons_in_sync_and_async():
+    class Compact(Resolver):
+        def resolve(self, text, targets):
+            return tuple(
+                NasalDecision(t.id, t.word, t.start, t.end, "nasalization")
+                for t in targets
+            )
+
+    converter = Transliterator(nasal_resolver=Compact())
+    result = converter.transliterate_detailed("са\u0301н")
+    assert result.text == "saŋ"
+    assert result.decisions[0].reason is None
+    assert asyncio.run(converter.atransliterate_detailed("са\u0301н")) == result
+
+
+@pytest.mark.parametrize("reason", ["", " ", 0, False, [], {}])
+def test_core_rejects_invalid_present_reasons(reason):
+    class Invalid(Resolver):
+        def resolve(self, text, targets):
+            return tuple(
+                replace(d, reason=reason) for d in super().resolve(text, targets)
+            )
+
+    with pytest.raises(NasalResponseError):
+        Transliterator(nasal_resolver=Invalid()).transliterate("сан")

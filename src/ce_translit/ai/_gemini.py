@@ -1,6 +1,7 @@
 """Gemini SDK adapter; the model never writes the transliterated text."""
 
 import asyncio
+import copy
 import json
 import math
 import time
@@ -50,7 +51,7 @@ async def _areject_redirect(response: "httpx.Response") -> None:
     _reject_redirect(response)
 
 
-_SCHEMA = {
+_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "decisions": {
@@ -73,6 +74,40 @@ _SCHEMA = {
     "required": ["decisions"],
     "additionalProperties": False,
 }
+
+
+_COMPACT_SCHEMA = copy.deepcopy(_SCHEMA)
+_COMPACT_ITEM = _COMPACT_SCHEMA["properties"]["decisions"]["items"]
+del _COMPACT_ITEM["properties"]["reason"]
+_COMPACT_ITEM["required"] = ["id", "kind"]
+
+
+def _system_prompt(include_reasons: bool) -> str:
+    prompt = (
+        resources.files("ce_translit.ai")
+        .joinpath("_prompt.txt")
+        .read_text(encoding="utf-8")
+    )
+    if not include_reasons:
+        # Share every linguistic instruction across modes. Only visible
+        # explanations and their consistency check are optional.
+        edits = (
+            (
+                " Объяснение каждого решения - не более одного предложения по-русски.",
+                "",
+            ),
+            (
+                "Проверь согласованность каждого kind с объяснением:",
+                "Проверь согласованность каждого kind:",
+            ),
+        )
+        for original, compact in edits:
+            if prompt.count(original) != 1:
+                raise RuntimeError(
+                    "Bundled nasal prompt has an invalid explanation template."
+                )
+            prompt = prompt.replace(original, compact, 1)
+    return prompt
 
 
 def _load_sdk() -> tuple[Any, Any, Any, Any, Any]:
@@ -99,7 +134,10 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def _parse_response(
-    response: "types.GenerateContentResponse", targets: Sequence[NasalTarget]
+    response: "types.GenerateContentResponse",
+    targets: Sequence[NasalTarget],
+    *,
+    include_reasons: bool = True,
 ) -> tuple[NasalDecision, ...]:
     candidates = response.candidates
     if not candidates or len(candidates) != 1:
@@ -125,16 +163,19 @@ def _parse_response(
         raise NasalResponseError("Gemini did not return one decision per target.")
     expected = {target.id: target for target in targets}
     found = {}
+    fields = {"id", "kind", "reason"} if include_reasons else {"id", "kind"}
     for row in rows:
         if (
             not isinstance(row, dict)
-            or set(row) != {"id", "kind", "reason"}
+            or set(row) != fields
             or not isinstance(row["id"], str)
             or row["id"] not in expected
             or row["id"] in found
             or row["kind"] not in ("consonant", "nasalization", "undetermined")
-            or not isinstance(row["reason"], str)
-            or not row["reason"].strip()
+            or (
+                include_reasons
+                and (not isinstance(row["reason"], str) or not row["reason"].strip())
+            )
         ):
             raise NasalResponseError(
                 "Gemini returned invalid, duplicate or unexpected decisions."
@@ -146,7 +187,7 @@ def _parse_response(
             target.start,
             target.end,
             row["kind"],
-            row["reason"].strip(),
+            row["reason"].strip() if include_reasons else None,
         )
     if found.keys() != expected.keys():
         raise NasalResponseError("Gemini omitted requested occurrences.")
@@ -183,7 +224,8 @@ class GeminiNasalResolver:
 
     api_key and model are required. base_url is a Gemini-protocol service root,
     not an OpenAI /v1 URL. timeout is in seconds, for each request attempt.
-    Use aclose/async with if any asynchronous request has been made.
+    include_reasons=False omits visible explanations; it does not change the
+    internal thinking level. Use aclose/async with after asynchronous requests.
     """
 
     def __init__(
@@ -197,11 +239,14 @@ class GeminiNasalResolver:
         max_targets_per_request: int = 64,
         max_context_chars: int = 12_000,
         thinking_level: str | None = None,
+        include_reasons: bool = True,
     ) -> None:
         if not isinstance(api_key, str) or not api_key.strip():
             raise ValueError("api_key must be explicitly provided.")
         if not isinstance(model, str) or not model.strip():
             raise ValueError("model must be explicitly provided.")
+        if not isinstance(include_reasons, bool):
+            raise ValueError("include_reasons must be a boolean.")
         if thinking_level is not None:
             if (
                 not isinstance(thinking_level, str)
@@ -242,17 +287,14 @@ class GeminiNasalResolver:
         )
         self._api_key = api_key.strip()
         self._thinking_level = thinking_level
+        self._include_reasons = include_reasons
         self._model = model.strip()
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._context = context
         self._max_targets = max_targets_per_request
         self._max_chars = max_context_chars
-        self._prompt = (
-            resources.files("ce_translit.ai")
-            .joinpath("_prompt.txt")
-            .read_text(encoding="utf-8")
-        )
+        self._prompt = _system_prompt(include_reasons)
         self._client: genai.Client | None = None
         self._aclient: genai.Client | None = None
         self._http: httpx.Client | None = None
@@ -370,7 +412,9 @@ class GeminiNasalResolver:
             "config": self._types.GenerateContentConfig(
                 system_instruction=self._prompt,
                 response_mime_type="application/json",
-                response_json_schema=_SCHEMA,
+                response_json_schema=(
+                    _SCHEMA if self._include_reasons else _COMPACT_SCHEMA
+                ),
                 candidate_count=1,
                 thinking_config=(
                     self._types.ThinkingConfig(thinking_level=self._thinking_level)
@@ -445,7 +489,13 @@ class GeminiNasalResolver:
         try:
             decisions: list[NasalDecision] = []
             for batch in self._batches(text, targets):
-                decisions.extend(_parse_response(self._request(batch), batch.targets))
+                decisions.extend(
+                    _parse_response(
+                        self._request(batch),
+                        batch.targets,
+                        include_reasons=self._include_reasons,
+                    )
+                )
             return tuple(decisions)
         finally:
             self._end()
@@ -468,7 +518,11 @@ class GeminiNasalResolver:
             decisions: list[NasalDecision] = []
             for batch in batches:
                 decisions.extend(
-                    _parse_response(await self._arequest(batch), batch.targets)
+                    _parse_response(
+                        await self._arequest(batch),
+                        batch.targets,
+                        include_reasons=self._include_reasons,
+                    )
                 )
             return tuple(decisions)
         finally:

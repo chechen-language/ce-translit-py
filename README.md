@@ -65,6 +65,8 @@ The same client works with both services: change only `base_url`, `model` and `a
 
 The examples use adjacent-sentence context and `low` reasoning, with an environment override for the reasoning level. The resolver's constructor defaults remain `context="sentence"` and `thinking_level=None`; omitting the reasoning argument or passing `None` uses the provider's default.
 
+Visible explanations are requested by default (`include_reasons=True`). Pass `include_reasons=False` to request only IDs and classifications from the model; the prompt and response schema omit explanations, and each returned decision has `reason=None`. This option is independent of `thinking_level`, which controls internal model reasoning. Compact responses can change classification accuracy as well as latency and token use. For bulk conversion when explanations are not needed, use `include_reasons=False`.
+
 ### Usage
 
 ```python
@@ -130,7 +132,7 @@ for decision in result.decisions:
     print(decision.word, decision.kind, decision.reason)
 ```
 
-Each `NasalDecision` contains `id`, `word`, `start`, `end`, `kind` and `reason`. Source spans are half-open Python code-point offsets: `source[decision.start:decision.end] == decision.word`. Repeated words have separate IDs, local to the conversion.
+Each `NasalDecision` contains `id`, `word`, `start`, `end`, `kind` and `reason`. The reason is a nonempty string when supplied, or `None` when explanations are omitted. Source spans are half-open Python code-point offsets: `source[decision.start:decision.end] == decision.word`. Repeated words have separate IDs, local to the conversion.
 
 | Decision kind | Rendering |
 | --- | --- |

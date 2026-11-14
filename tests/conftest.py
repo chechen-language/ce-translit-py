@@ -147,7 +147,11 @@ def pytest_sessionfinish(session, exitstatus):
             "| --- | --- | --- | --- | --- | --- | --- |",
         ]
         for row in record["rows"]:
-            reason = row["reason"].replace("|", "\\|").replace("\n", " ")
+            reason = (
+                ("not requested" if row["reason"] is None else row["reason"])
+                .replace("|", "\\|")
+                .replace("\n", " ")
+            )
             verdict = (
                 "unlabelled"
                 if row["expected"] is None

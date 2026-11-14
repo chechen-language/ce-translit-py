@@ -74,3 +74,14 @@ def test_default_suite_blocks_external_dns_and_direct_sockets(host, request):
     with socket.socket() as client:
         with pytest.raises(AssertionError, match="External network"):
             client.connect((host, 80))
+
+
+def test_report_represents_absent_reasons_without_fabricating_explanations(tmp_path):
+    path = tmp_path / "compact.md"
+    compact = record("adjacent", 123)
+    for row in compact["rows"]:
+        row["reason"] = None
+    write_report(path, [compact])
+    text = path.read_text()
+    assert text.count("not requested") == 2
+    assert "Scored: **1/1**" in text

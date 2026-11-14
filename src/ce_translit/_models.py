@@ -19,8 +19,10 @@ class NasalTarget:
 
 @dataclass(frozen=True)
 class NasalDecision(NasalTarget):
+    """An occurrence classification, with None when no explanation is supplied."""
+
     kind: NasalKind
-    reason: str
+    reason: str | None = None
 
 
 @dataclass(frozen=True)

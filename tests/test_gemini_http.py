@@ -65,6 +65,14 @@ def http_stub():
                         for item in payload["contexts"]
                         for t in item["targets"]
                     ]
+                    if (
+                        "reason"
+                        not in body["generationConfig"]["responseJsonSchema"][
+                            "properties"
+                        ]["decisions"]["items"]["properties"]
+                    ):
+                        for decision in decisions:
+                            del decision["reason"]
                     status, headers, result = (
                         200,
                         {},
@@ -474,3 +482,31 @@ def test_retry_after_metadata_survives_the_last_allowed_attempt(http_stub, mode)
         convert(GeminiNasalResolver("dummy", "m", server.url), mode)
     assert caught.value.retry_after == 3600
     assert len(server.requests) == 3
+
+
+@pytest.mark.parametrize("mode", ["sync", "async"])
+@pytest.mark.parametrize("include_reasons", [False, True])
+def test_reason_mode_reaches_native_schema_without_affecting_low_thinking(
+    http_stub, mode, include_reasons
+):
+    server = http_stub()
+    resolver = GeminiNasalResolver(
+        "dummy",
+        "test-model",
+        server.url,
+        thinking_level="low",
+        include_reasons=include_reasons,
+    )
+    source = "са\u0301н\u0301"
+    result = convert(resolver, mode, source)
+    assert result.text == "saŋ"
+    assert result.decisions[0].word == source
+    assert (result.decisions[0].reason is not None) == include_reasons
+    body = server.requests[0]["body"]
+    generation = body["generationConfig"]
+    assert list(generation["thinkingConfig"].values()) == ["LOW"]
+    fields = generation["responseJsonSchema"]["properties"]["decisions"]["items"]
+    assert ("reason" in fields["required"]) == include_reasons
+    assert ("reason" in fields["properties"]) == include_reasons
+    prompt = body["systemInstruction"]["parts"][0]["text"]
+    assert ("Объяснение каждого решения" in prompt) == include_reasons

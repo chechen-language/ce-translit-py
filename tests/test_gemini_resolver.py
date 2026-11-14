@@ -428,3 +428,120 @@ def test_real_sdk_response_finish_enum_and_text_parts(sdk):
         result = Transliterator(nasal_resolver=r).transliterate_detailed("шун")
     assert result.text == "şun"
     assert result.decisions[0].kind == "undetermined"
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_compact_resolver_omits_reasons_and_preserves_original_spans(sdk, asynchronous):
+    def compact(kwargs):
+        return response(
+            {
+                "decisions": [
+                    {"id": t["id"], "kind": "nasalization"}
+                    for t in reversed(request_targets(kwargs))
+                ]
+            }
+        )
+
+    sdk.outcomes = [compact]
+    source = "са\u0301н\u0301 сан"
+    if asynchronous:
+
+        async def run():
+            async with resolver(include_reasons=False, thinking_level="low") as r:
+                return await Transliterator(nasal_resolver=r).atransliterate_detailed(
+                    source
+                )
+
+        result = asyncio.run(run())
+    else:
+        with resolver(include_reasons=False, thinking_level="low") as r:
+            converter = Transliterator(nasal_resolver=r)
+            result = converter.transliterate_detailed(source)
+    assert result.text == "saŋ saŋ"
+    assert all(
+        d.reason is None and source[d.start : d.end] == d.word for d in result.decisions
+    )
+    config = sdk.calls[0]["config"]
+    item = config.response_json_schema["properties"]["decisions"]["items"]
+    assert set(item["properties"]) == {"id", "kind"}
+    assert item["required"] == ["id", "kind"]
+    assert config.thinking_config.thinking_level == "LOW"
+    assert "объяснен" not in config.system_instruction.lower()
+    assert "Бен как ограничительная частица" in config.system_instruction
+    assert "consonant противоречит указанному правилу" in config.system_instruction
+
+
+@pytest.mark.parametrize("include_reasons", [True, False])
+@pytest.mark.parametrize("asynchronous", [True, False])
+def test_selected_reason_schema_is_enforced_without_retry(
+    sdk, include_reasons, asynchronous
+):
+    row = {"id": "N000001", "kind": "nasalization"}
+    if not include_reasons:
+        row["reason"] = "Unexpected in compact mode."
+    sdk.outcomes = [response({"decisions": [row]})]
+    if asynchronous:
+
+        async def run():
+            async with resolver(include_reasons=include_reasons) as r:
+                await Transliterator(nasal_resolver=r).atransliterate("сан")
+
+        with pytest.raises(NasalResponseError):
+            asyncio.run(run())
+    else:
+        with (
+            resolver(include_reasons=include_reasons) as r,
+            pytest.raises(NasalResponseError),
+        ):
+            Transliterator(nasal_resolver=r).transliterate("сан")
+    assert len(sdk.calls) == 1
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "false", []])
+def test_reason_setting_requires_an_explicit_boolean(sdk, value):
+    with pytest.raises(ValueError, match="include_reasons"):
+        resolver(include_reasons=value)
+    assert not sdk.clients
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        '{"decisions":[{"id":"N000001","id":"N000001","kind":"nasalization"}]}',
+        '{"decisions":[{"id":"N000001","kind":"invalid"}]}',
+        '{"decisions":[{"id":"N000001","kind":"nasalization","extra":1}]}',
+        '{"decisions":[{"id":"WRONG","kind":"nasalization"}]}',
+    ],
+)
+def test_compact_parser_rejects_ambiguous_or_invalid_rows(sdk, bad):
+    sdk.outcomes = [
+        SimpleNamespace(candidates=[SimpleNamespace(finish_reason="STOP")], text=bad)
+    ]
+    with resolver(include_reasons=False) as r, pytest.raises(NasalResponseError):
+        Transliterator(nasal_resolver=r).transliterate("сан")
+    assert len(sdk.calls) == 1
+
+
+def test_reason_modes_share_all_linguistic_instructions_and_default_is_unchanged():
+    from importlib import resources
+
+    default = (
+        resources.files("ce_translit.ai")
+        .joinpath("_prompt.txt")
+        .read_text(encoding="utf-8")
+    )
+    assert _gemini._system_prompt(True) == default
+    assert _gemini._system_prompt(False) == default.replace(
+        " Объяснение каждого решения - не более одного предложения по-русски.", ""
+    ).replace(
+        "Проверь согласованность каждого kind с объяснением:",
+        "Проверь согласованность каждого kind:",
+    )
+
+
+def test_compact_mode_fails_before_requests_if_bundled_prompt_edits_drift(monkeypatch):
+    resource = SimpleNamespace(read_text=lambda **kwargs: "Unexpected prompt contents.")
+    package = SimpleNamespace(joinpath=lambda name: resource)
+    monkeypatch.setattr(_gemini.resources, "files", lambda name: package)
+    with pytest.raises(RuntimeError, match="explanation template"):
+        _gemini._system_prompt(False)
