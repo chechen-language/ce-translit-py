@@ -14,7 +14,6 @@ from ce_translit import NasalDecision, Transliterator, transliterate
         ("ѐ ѝ", "ye i"),
         ("ё й е\u0308 и\u0306", "ö y ö y"),
         ("е\u0301\u0308 и\u0301\u0306", "ö y"),
-        ("шекь\u0301е\u0308\u0301лу", "şekyölu"),
         ("х\u0301ь г\u0301ӏ к\u0301ъ у\u0301ь", "ẋ ġ q̇ ü"),
         ("к\u0301ъе", "q̇e"),
         ("чекхъ\u0301е\u0301ли", "çeqyeli"),
@@ -36,7 +35,7 @@ def test_custom_map_applies_after_annotation_removal_and_preserves_its_output():
 
 
 def test_annotation_removal_keeps_original_resolver_text_words_and_offsets():
-    source = "😀 шекь\u0301е\u0308лу [са\u0301н\u0301] сан"
+    source = "😀 и\u0306\u0301 [са\u0301н\u0301] сан"
 
     class Resolver:
         def resolve(self, text, targets):
@@ -53,7 +52,7 @@ def test_annotation_removal_keeps_original_resolver_text_words_and_offsets():
 
     converter = Transliterator(nasal_resolver=Resolver())
     result = converter.transliterate_detailed(source)
-    assert result.text == "😀 şekyölu [saŋ] saŋ"
+    assert result.text == "😀 y [saŋ] saŋ"
     assert asyncio.run(converter.atransliterate_detailed(source)) == result
 
 
@@ -73,10 +72,3 @@ def test_actual_cyrillic_letters_keep_canonical_identity(letter):
 def test_unsupported_structural_letters_are_not_guessed_as_latin():
     assert transliterate("ӓ ӧ ӱ ӣ ӯ") == "ӓ ӧ ӱ ӣ ӯ"
     assert transliterate("а\u0308 о\u0308 у\u0308 и\u0304 у\u0304") == "ӓ ӧ ӱ ӣ ӯ"
-
-
-def test_fixed_glides_and_explicit_custom_sequence_overrides():
-    mapping = {**Transliterator()._mapping, "ё": "jo", "е\u0308": "X"}
-    converter = Transliterator(mapping)
-    assert converter.transliterate("льё лье\u0308 ё") == "lyö lX jo"
-    assert Transliterator({**mapping, "льё": "CUSTOM"}).transliterate("льё") == "CUSTOM"

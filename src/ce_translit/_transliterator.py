@@ -33,6 +33,13 @@ with (
     _DEFAULT_DATA: Final[dict] = json.load(fh)
 
 DEFAULT_MAPPING: Final[Mapping[str, str]] = _DEFAULT_DATA["mapping"]
+_VOWEL_ENDINGS: Final[tuple[str, ...]] = tuple("аеёиоуыэюя") + (
+    "аь",
+    "оь",
+    "уь",
+    "яь",
+    "юь",
+)
 
 
 def _rendering_word(word: str) -> str:
@@ -148,24 +155,21 @@ class Transliterator:
                         match = "q̇" if key.islower() else "Q̇"  # match to 'къ'
                     else:
                         match = ""  # else skip 'ъ'
-                elif lower_key in ("е", "ё") and not (
-                    key != canonical_key and key in self._mapping
-                ):
-                    # A soft sign inside a mapped letter (e.g. хь) is not a separator.
-                    if previous_unit.lower() == "ь" or (
-                        lower_key == "е"
-                        and (
-                            i == 0
-                            or (
-                                has_pre_letter
-                                and pre_letter.lower() == "ъ"
-                                and (i < 2 or word[i - 2 : i].lower() != "къ")
-                            )
+                elif lower_key == "е":
+                    previous_key = unicodedata.normalize("NFC", previous_unit).lower()
+                    # Consumed units distinguish consonants (хь) from vowels (аь).
+                    if (
+                        i == 0
+                        or previous_key == "ь"
+                        or previous_key.endswith(_VOWEL_ENDINGS)
+                        or (
+                            has_pre_letter
+                            and pre_letter.lower() == "ъ"
+                            and (i < 2 or word[i - 2 : i].lower() != "къ")
                         )
                     ):
-                        syllable = "ye" if lower_key == "е" else "yö"
                         if key.islower():
-                            match = syllable
+                            match = "ye"
                         else:
                             following = i + 1
                             while following < len(word) and unicodedata.category(
@@ -173,18 +177,18 @@ class Transliterator:
                             ).startswith("M"):
                                 following += 1
                             next_base = word[following : following + 1]
-                            previous_base = _without_marks(previous_unit)[-1:]
+                            previous_base = _without_marks(previous_unit)
                             match = (
-                                syllable.upper()
+                                "YE"
                                 if next_base.isupper()
                                 or not next_base
                                 and previous_base.isupper()
-                                else syllable.capitalize()
+                                else "Ye"
                             )
                     else:
                         match = self._mapping.get(
                             key, self._mapping.get(canonical_key)
-                        )  # regular transliteration for 'е' or 'ё'
+                        )  # regular transliteration for 'е'
                 else:
                     match = self._mapping.get(
                         key, self._mapping.get(canonical_key)
