@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ce-translit"
-version = "2.0.0"
+version = "2.0.1"
 description = "Transliterate Chechen text from Cyrillic to Latin script using the Chechen Latin alphabet"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -33,7 +33,8 @@ include = [
     "/tests",
     "/LICENSE",
     "/README.md",
-    "/docs/limitations.md"
+    "/docs/limitations.md",
+    "/docs/contextual-nasalization.md"
 ]
 
 [tool.hatch.build.targets.wheel]

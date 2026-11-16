@@ -1,39 +1,67 @@
-# Chechen Transliterator
+<h1 align="center">Chechen Transliterator</h1>
 
-[![PyPI](https://img.shields.io/pypi/v/ce-translit.svg)](https://pypi.org/project/ce-translit/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+<p align="center">
+  <a href="https://pypi.org/project/ce-translit/"><img src="https://img.shields.io/pypi/v/ce-translit.svg" alt="PyPI"></a>
+</p>
 
-`ce-translit` converts Chechen text from Cyrillic to the Chechen Latin alphabet. It combines a deterministic transliteration engine with optional AI-powered **nasalization disambiguation**: the appropriate Latin spelling is selected from each word's meaning and grammatical role in context.
+`ce-translit` converts Chechen Cyrillic to the Chechen Latin alphabet. Offline conversion is deterministic, preserves punctuation and whitespace, and has no third-party runtime dependencies. An optional Gemini resolver distinguishes nasalized and consonantal readings of final `н` using context.
 
-- Chechen-specific character combinations and positional spelling rules.
-- Contextual nasalization analysis with Gemini.
-- Preserved case, punctuation and whitespace; Cyrillic source stress marks are removed.
-- Synchronous and asynchronous APIs with per-occurrence linguistic decisions.
+| Cyrillic input | Offline output |
+| --- | --- |
+| Нохчийн мотт | Noxçiyn mott |
+| Со цунах хӏинца шекьяьлла | So cunax hinca şekyälla |
+| Арахь чӏогӏа шелъелла вайна | Araẋ ç̇oġa şelyella vayna |
 
 Requires Python 3.10 or later.
 
 ## Installation
 
-```bash
-pip install ce-translit
-```
-
-For AI-powered nasalization:
+Install with [uv](https://docs.astral.sh/uv/) or pip:
 
 ```bash
-pip install 'ce-translit[ai]'
+uv add ce-translit        # or: pip install ce-translit
 ```
 
 ## Quick Start
 
 ```python
-import ce_translit
+from ce_translit import transliterate
 
-text = ce_translit.transliterate("Нохчийн мотт")
-print(text)  # Noxçiyn mott
+print(transliterate("Нохчийн мотт"))  # Noxçiyn mott
 ```
 
-Basic transliteration runs locally with the standard character mapping, including `н → n`. The core has no third-party runtime dependencies.
+Offline conversion uses the standard character mapping, including `н → n`.
+
+## API And Results
+
+| Function or `Transliterator` method | Returns |
+| --- | --- |
+| `transliterate(text)` | Latin text as `str`. |
+| `transliterate_detailed(text)` | `TransliterationResult` with text and decisions. |
+| `await atransliterate(text)` | Latin text as `str`. |
+| `await atransliterate_detailed(text)` | `TransliterationResult` with text and decisions. |
+
+Module-level functions provide offline conversion. Use a `Transliterator(nasal_resolver=...)` instance for contextual nasalization. For a custom alphabet, `Transliterator(mapping=...)` replaces the default mapping; built-in word-level rules still apply.
+
+Detailed results contain `text`, `ai_used` and an ordered tuple of `decisions`. `ai_used` is true when a resolver was consulted for at least one final-`н` occurrence; offline results have `ai_used=False` and no decisions. See [decision fields and source spans](https://github.com/chechen-language/ce-translit-py/blob/main/docs/contextual-nasalization.md#decisions-and-source-spans) when inspecting individual readings.
+
+## Transliteration
+
+The offline engine applies the [Chechen alphabet mapping](https://github.com/chechen-language/ce-translit-py/blob/main/src/ce_translit/data/cyrl_latn_map.json) to letters and character combinations. Longer combinations are matched before their component letters. Representative mappings include:
+
+| Group | Examples |
+| --- | --- |
+| Vowels | `аь → ä`, `оь → ö`, `уь → ü`, `яь → yä`, `юь → yü` |
+| Consonant combinations | `гӏ → ġ`, `кх → q`, `къ → q̇`, `кӏ → k̇`, `хь → ẋ`, `хӏ → h` |
+| Doubled consonants | `ггӏ → ġġ`, `ккх → qq`, `ттӏ → ṫṫ`, `ххь → ẋẋ` |
+
+Both palochka spellings, `ӏ` (U+04CF) and `Ӏ` (U+04C0), are recognized. The mapping includes lowercase and uppercase forms. `ь` and `ы` have no standalone Latin output; `ъ` maps to `ə` when it is not a separator or part of a consonant combination.
+
+Words are runs of Unicode letters, decimal digits and attached combining marks; hyphens and other punctuation separate words. Word-level spelling rules also apply: standalone `а` becomes `ə`, and `е` becomes `ye` at word start, after a Cyrillic vowel or after a separating `ъ` or `ь`. Signs within consonant combinations are treated as part of that consonant.
+
+Whitespace, punctuation and emoji are preserved. Unmapped letters stay in their source script, and digits remain literal unless explicitly mapped. Word output uses Unicode NFC normalization. Source stress and annotation marks attached to Cyrillic letters are removed while structural diacritics in letters such as `ё` and `й`, and in the target Latin alphabet, are retained.
+
+See [known limitations](https://github.com/chechen-language/ce-translit-py/blob/main/docs/limitations.md) for uppercase Latin expansions and invisible format characters inside words.
 
 ## Contextual Nasalization
 
@@ -46,28 +74,15 @@ Chechen homographs can share a Cyrillic spelling while differing in meaning and 
 | бен | only / except | beŋ |
 | бен | nest / den | ben |
 
-The nasalization resolver uses the surrounding text to distinguish these readings. Each occurrence is analysed separately, including repeated words. In the adopted Latin orthography, `ŋ` denotes vowel nasalization; `n` represents the pronounced consonant.
+In the adopted Latin orthography, `ŋ` denotes vowel nasalization; `n` represents the pronounced consonant. The resolver analyses each occurrence separately using surrounding text. Predictions can contain linguistic errors.
 
-### Configuration
+Install the optional dependencies:
 
-The examples read these environment variables:
+```bash
+uv add 'ce-translit[ai]'   # or: pip install 'ce-translit[ai]'
+```
 
-| Variable | Purpose |
-| --- | --- |
-| `GEMINI_API_KEY` | API key for the configured service, or a non-empty placeholder for an unauthenticated gateway. |
-| `GEMINI_MODEL` | Model name available on that service. |
-| `GEMINI_BASE_URL` | Optional service root for a Gemini-compatible endpoint. |
-| `GEMINI_THINKING_LEVEL` | Reasoning level for the examples, defaulting to `low`: `minimal`, `low`, `medium`, `high`, or `xhigh`. |
-
-With `GEMINI_BASE_URL` unset, the resolver connects to Google's Gemini API. Set it to your service root to use a Gemini-compatible gateway such as CLIProxyAPI. The endpoint must support Gemini's `generateContent` protocol under `/v1beta`.
-
-The same client works with both services: change only `base_url`, `model` and `api_key`. The resolver requires a non-empty key; for a gateway without client authentication, set `GEMINI_API_KEY` to a placeholder such as `local-gateway`. Google's Gemini API requires a valid key. Set `thinking_level` independently of the model name. Supported levels depend on the selected model and service.
-
-The examples use adjacent-sentence context and `low` reasoning, with an environment override for the reasoning level. The resolver's constructor defaults remain `context="sentence"` and `thinking_level=None`; omitting the reasoning argument or passing `None` uses the provider's default.
-
-Visible explanations are requested by default (`include_reasons=True`). Pass `include_reasons=False` to request only IDs and classifications from the model; the prompt and response schema omit explanations, and each returned decision has `reason=None`. This option is independent of `thinking_level`, which controls internal model reasoning. Compact responses can change classification accuracy as well as latency and token use. For bulk conversion when explanations are not needed, use `include_reasons=False`.
-
-### Usage
+Set `GEMINI_API_KEY` to your API key and `GEMINI_MODEL` to a model available on your service. `GEMINI_BASE_URL` is optional; leave it unset for Google's Gemini API. The example reads environment variables explicitly; the library does not load variables or `.env` files automatically.
 
 ```python
 import os
@@ -75,6 +90,7 @@ import os
 from ce_translit import Transliterator
 from ce_translit.ai import GeminiNasalResolver
 
+source = "цхьа стаг бен вацар арахь"
 with GeminiNasalResolver(
     api_key=os.environ["GEMINI_API_KEY"],
     model=os.environ["GEMINI_MODEL"],
@@ -83,123 +99,25 @@ with GeminiNasalResolver(
     thinking_level=os.environ.get("GEMINI_THINKING_LEVEL") or "low",
 ) as resolver:
     transliterator = Transliterator(nasal_resolver=resolver)
-    result = transliterator.transliterate_detailed("цхьа стаг бен вацар арахь")
-    print(result.text)  # cẋa stag beŋ vacar araẋ
+    result = transliterator.transliterate_detailed(source)
+    print(result.text)
+    for decision in result.decisions:
+        print(decision.word, decision.kind, decision.reason)
 ```
 
-The resolver uses the [Google GenAI SDK](https://github.com/googleapis/python-genai). Reuse it across conversions within the `with` block; the context manager closes its network resources on exit.
+An expected reading is `cẋa stag beŋ vacar araẋ`; actual model decisions may differ. Reuse the resolver inside the `with` block, which closes its network resources on exit. `include_reasons=False` omits visible explanations for bulk conversion.
 
-### Async Usage
+This example selects adjacent-sentence context and defaults to low reasoning, overridable with `GEMINI_THINKING_LEVEL`. See [resolver configuration and defaults](https://github.com/chechen-language/ce-translit-py/blob/main/docs/contextual-nasalization.md#configuration) for these options, Gemini-compatible gateways, async use, request limits and error handling. If the optional dependencies are missing, constructing the resolver raises `MissingAIDependencyError`; install `ce-translit[ai]`.
 
-```python
-import os
-
-from ce_translit import Transliterator
-from ce_translit.ai import GeminiNasalResolver
-
-
-async def transliterate_texts(texts: list[str]) -> list[str]:
-    async with GeminiNasalResolver(
-        api_key=os.environ["GEMINI_API_KEY"],
-        model=os.environ["GEMINI_MODEL"],
-        base_url=os.environ.get("GEMINI_BASE_URL") or None,
-        context="adjacent",
-        thinking_level=os.environ.get("GEMINI_THINKING_LEVEL") or "low",
-    ) as resolver:
-        transliterator = Transliterator(nasal_resolver=resolver)
-        return [await transliterator.atransliterate(text) for text in texts]
-```
-
-For a long-running application, keep one resolver open for its lifecycle and close it during shutdown. Asynchronous use requires `async with` or `await resolver.aclose()`, in the same event loop that uses the resolver. Finish or cancel and await pending conversions before closing. Synchronous conversions can share a resolver across threads; a resolver used asynchronously must be closed asynchronously.
-
-## API And Results
-
-| `Transliterator` method | Returns |
-| --- | --- |
-| `transliterate(text)` | Latin text as `str`. |
-| `transliterate_detailed(text)` | `TransliterationResult` with text and decisions. |
-| `await atransliterate(text)` | Latin text as `str`. |
-| `await atransliterate_detailed(text)` | `TransliterationResult` with text and decisions. |
-
-The module-level functions with these names provide basic transliteration. Use a `Transliterator` instance with a resolver for contextual nasalization. For a custom alphabet, pass a character mapping to `Transliterator(mapping=...)`; it replaces the default mapping and determines the multi-character units recognized by positional rules.
-
-### Detailed Results
-
-`TransliterationResult` contains `text`, `ai_used` and an ordered tuple of `decisions`. The `ai_used` flag indicates whether AI was used for the conversion. Using the result from the example above:
-
-```python
-for decision in result.decisions:
-    print(decision.word, decision.kind, decision.reason)
-```
-
-Each `NasalDecision` contains `id`, `word`, `start`, `end`, `kind` and `reason`. The reason is a nonempty string when supplied, or `None` when explanations are omitted. Source spans are half-open Python code-point offsets: `source[decision.start:decision.end] == decision.word`. Repeated words have separate IDs, local to the conversion.
-
-| Decision kind | Rendering |
-| --- | --- |
-| `consonant` | `n/N` |
-| `nasalization` | `ŋ/Ŋ` |
-| `undetermined` | `n/N`, with the unresolved reading recorded in the decision. |
-
-Use detailed results when your application needs to inspect uncertainty. AI predictions remain subject to linguistic error.
-
-### Requests And Errors
-
-Each occurrence is analysed in its complete sentence. Multiple independent sentence contexts can share one request; sentences without target occurrences are not sent. Set `context="adjacent"` on `GeminiNasalResolver` to include the previous and next sentence explicitly. An unresolved reading does not trigger hidden follow-up requests.
-
-Sentence boundaries use Unicode UAX #29 with tailoring for single-line wraps, paragraph breaks, initials, common Russian abbreviations and web addresses. Single line breaks may remain inside a sentence; blank lines separate fragments. Unpunctuated input is treated as a fragment. Plain-text sentence boundaries can be ambiguous; the library does not infer missing punctuation.
-
-Requests are packed sequentially with configurable `max_targets_per_request=64` and `max_context_chars=12000`. The character limit applies to the sum of source contexts in one request, not JSON overhead or provider tokens. If a sentence contains more target occurrences than fit in one request, its full context is repeated with disjoint target lists. If a complete context exceeds the character limit, conversion raises `NasalInputError` before any request; increase the limit for that input. Contexts are never truncated.
-
-The default timeout is 60 seconds per request attempt, configurable through `GeminiNasalResolver(timeout=...)`. Temporary network and API failures receive up to two retries. Provider `Retry-After` delays are honoured; delays above the 60-second automatic wait limit raise `NasalAPIError` with `retry_after` instead of retrying early. HTTPX environment proxy settings apply to both sync and async calls. HTTP redirects are rejected without forwarding credentials or text to another address.
-
-Failures raise exceptions from `ce_translit.errors`:
-
-| Exception | Meaning |
-| --- | --- |
-| `NasalAPIError` | A network or provider request failed; `status_code` is available for API errors. |
-| `NasalResponseError` | The response was blocked, truncated or failed decision validation. |
-| `NasalInputError` | A complete context exceeds the configured limit or occurrence spans are invalid. |
-| `NasalLifecycleError` | The resolver is closed, used from a different event loop, or closed with operations still running. |
-
-These inherit from `NasalResolutionError`. A failed conversion raises an exception rather than returning partially processed text.
-
-AI processing sends source context to the configured provider and consumes its API quota. Review the provider's pricing and data-handling terms before processing sensitive texts.
-
-## Text Handling
-
-Words consist of Unicode letters, decimal digits and attached combining marks. Hyphens, quotes, brackets and underscores delimit words; contiguous mixed-script text forms one word. Whitespace, punctuation and emoji retain their original positions among the transformed words.
-
-The letter `е` becomes `ye` at the start of a word, after a Cyrillic vowel, or after a separating `ъ` or `ь`: `елла → yella`, `дӏаелира → djayelira`, `гучуелира → guçuyelira`, `хьеелира → ẋeyelira`, `тӏееана → ṫeyeana`, `шелъелча → şelyelça`. Vowels written with a soft sign, such as `аь`, are vowel units too. Signs consumed as part of consonant units such as `къ` and `хь` do not act as separators.
-
-Native separating-soft-sign examples are `шекьяьлла → şekyälla` and `хӏаллакьхилла → hallakxilla`. In the latter, the separator keeps `к` and `х` apart instead of forming the consonant unit `кх`.
-
-Cyrillic source stress and attached annotation marks are removed during rendering: `де́ -> de`. Positional rules still apply, so initial `е́ -> ye`. Actual Cyrillic letters, including `ё` and `й` and their decomposed forms `е + U+0308` and `и + U+0306`, retain their structural diacritics. Acute/grave marks are treated as stress, including precomposed forms such as `ѐ`. Unsupported letters remain Cyrillic rather than receiving an inferred Latin mapping. Generated Latin alphabet diacritics such as `ö`, `ü`, `ẋ`, `ġ` and `q̇` remain intact. Marks on other scripts and unattached marks are preserved. Resolver input, target words and source offsets always refer to the original text.
-
-Word outputs are normalized to NFC, and separators are preserved exactly. Digits remain literal unless explicitly mapped. Custom mappings are applied to the rendering form after annotation removal; explicit decomposed `ё`/`й` keys take priority for that input spelling, with NFC fallback otherwise. The positional `е` glide is fixed with custom single-letter mappings; explicit multi-character mappings take priority. Keys containing removed source annotations cannot match. Invisible format characters inside words are a deferred limitation; see [limitations](https://github.com/chechen-language/ce-translit-py/blob/main/docs/limitations.md).
+AI processing sends source context to the configured provider and consumes its API quota. Review that provider's pricing and data-handling terms before processing sensitive texts.
 
 ## Development
 
 ```bash
-hatch run test
-hatch run ai:test
-hatch build
+uv run --extra ai --with pytest pytest
+uv build
 ```
 
-The offline test suite covers transliteration rules, Unicode boundaries, sentence contexts, occurrence tracking and SDK requests to local HTTP servers. It requires neither a provider key nor access to a Gemini endpoint. CI runs the core, optional AI dependencies and minimum supported SDK versions separately. Live evaluations compare `sentence` and `adjacent` modes on 93 previously native-speaker-reviewed positions, reporting every detected occurrence, per-class results, HTTP attempts, elapsed time and provider-reported token usage. Unlabelled occurrences are shown but not scored; missing usage is reported as unknown. These previously reviewed samples are not an independent estimate of linguistic accuracy.
+The offline tests cover transliteration, Unicode handling, contexts, occurrence tracking and SDK requests to local HTTP servers. They need no provider key or Gemini endpoint. For opt-in provider checks, see [live evaluation](https://github.com/chechen-language/ce-translit-py/blob/main/docs/contextual-nasalization.md#live-evaluation).
 
-With the Gemini environment variables configured, run a live evaluation:
-
-```bash
-CE_TRANSLIT_API_KEY="$GEMINI_API_KEY" \
-CE_TRANSLIT_MODEL="$GEMINI_MODEL" \
-CE_TRANSLIT_BASE_URL="${GEMINI_BASE_URL:-}" \
-CE_TRANSLIT_THINKING_LEVEL="${GEMINI_THINKING_LEVEL:-low}" \
-hatch run ai:test tests/test_live_gemini.py --run-live-nasal \
-  --nasal-report "/tmp/nasal-review-$(date +%s).md" -v
-```
-
-Live evaluations send the fixture texts to the provider. Reports include source context, model decisions, reference labels and explanations.
-
-## License
-
-[MIT](LICENSE). Maintained by [Chechen Language](https://github.com/chechen-language).
+Report bugs or ask questions in [GitHub Issues](https://github.com/chechen-language/ce-translit-py/issues).
